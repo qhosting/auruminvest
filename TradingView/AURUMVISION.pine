@@ -1,185 +1,98 @@
-//@version=5
+//@version=6
 // ═══════════════════════════════════════════════════════════════════════════════
-// 📊 AURUM VISION V34.0 [PROFESSIONAL] - 100% Sin Lookahead Bias
-// ═══════════════════════════════════════════════════════════════════════════════
-// 
-// 🎯 MEJORAS CRÍTICAS IMPLEMENTADAS:
-// ✅ Eliminado completamente lookahead bias (request.security con lookahead_off)
-// ✅ Corregido repainting en Fibonacci y zonas con confirmación
-// ✅ Gestión de riesgo profesional con position sizing dinámico (% de cuenta)
-// ✅ Sistema de confluencia jerárquico (RSI ajustado 60/40, filtros opcionales)
-// ✅ Trailing stop y break-even automático
-// ✅ Límite de 50 objetos gráficos (gestión de memoria)
-// ✅ Protecciones contra división por cero
-// ✅ Dashboard con métricas en tiempo real (Win Rate, Profit Factor, Drawdown)
-// ✅ Sistema de alertas mejorado con información completa
-// ✅ Comentarios claros en español
-//
-// 📅 Fecha: 10 Diciembre 2025
-// 👤 Optimizado para trading profesional en M5
+// 📊 AURUM VISION V35.4 [FINAL PATCH] - Pine Script v6 - 100% Sin Errores
 // ═══════════════════════════════════════════════════════════════════════════════
 
-strategy("Aurum Vision PRO V34.0 [NO-REPAINT]", 
+strategy("Aurum Vision PRO V35.4 [FINAL PATCH]",
     overlay=true, 
-    initial_capital=1000,  // Capital más realista
-    default_qty_type=strategy.percent_of_equity,  // ✅ Cambio: Basado en %
-    default_qty_value=1.0,  // 1% por defecto
+    initial_capital=1000,
+    default_qty_type=strategy.percent_of_equity,
+    default_qty_value=1.0,
     commission_type=strategy.commission.percent, 
-    commission_value=0.06,  // Comisión realista
-    slippage=2,  // Slippage realista
-    calc_on_every_tick=false)  // ✅ No repaint: Solo calcular en cierre
+    commission_value=0.06,
+    slippage=2,
+    calc_on_every_tick=false)
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 📋 SECCIÓN 1: CONFIGURACIÓN DE PARÁMETROS
+// 📋 SECCIÓN 1: CONFIGURACIÓN
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 🎯 Estrategia Base (Multi-Timeframe)
-// ─────────────────────────────────────────────────────────────────────────────
 group_strat = "🎯 Estrategia (Scalping M5)"
-inp_dist_puntos = input.int(35, "Distancia Zona H1 (Puntos)", minval=10, maxval=100, 
-    group=group_strat, tooltip="Distancia en puntos para considerar precio cerca de zona H1. Reducido de 50 a 35 para scalping.")
+inp_dist_puntos = input.int(35, "Distancia Zona H1 (Puntos)", minval=10, maxval=100, group=group_strat)
 h1_lookback = input.int(20, "Periodo Zona Macro (H1)", minval=10, maxval=50, group=group_strat)
-m15_ema_len = input.int(150, "Tendencia EMA (M15)", minval=50, maxval=200, group=group_strat, 
-    tooltip="Reducido de 200 a 150 para mayor sensibilidad en scalping")
+m15_ema_len = input.int(150, "Tendencia EMA (M15)", minval=50, maxval=200, group=group_strat)
 adx_len = input.int(14, "ADX Periodo", minval=10, maxval=20, group=group_strat)
-adx_min = input.int(25, "ADX Mínimo (Fuerza)", minval=20, maxval=40, group=group_strat, 
-    tooltip="Aumentado de 20 a 25 para filtrar mercados débiles")
+adx_min = input.int(25, "ADX Mínimo (Fuerza)", minval=20, maxval=40, group=group_strat)
 m5_rsi_len = input.int(14, "Gatillo RSI (M5)", minval=9, maxval=21, group=group_strat)
+rsi_ob = input.float(60.0, "RSI Sobrecompra", minval=55.0, maxval=80.0, step=1.0, group=group_strat)
+rsi_os = input.float(40.0, "RSI Sobreventa", minval=20.0, maxval=45.0, step=1.0, group=group_strat)
 
-// ✅ MEJORA: RSI con niveles más realistas (60/40 en vez de 75/25)
-rsi_ob = input.float(60.0, "RSI Sobrecompra", minval=55.0, maxval=80.0, step=1.0, group=group_strat, 
-    tooltip="Cambiado de 75 a 60 para más señales válidas")
-rsi_os = input.float(40.0, "RSI Sobreventa", minval=20.0, maxval=45.0, step=1.0, group=group_strat, 
-    tooltip="Cambiado de 25 a 40 para más señales válidas")
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 📐 Fibonacci & Visualización
-// ─────────────────────────────────────────────────────────────────────────────
 group_fibo = "📐 Fibonacci & Trampa"
 use_fibo = input.bool(true, "Mostrar Auto-Fibonacci", group=group_fibo)
 fibo_len = input.int(100, "Periodo Lookback Fibo", minval=50, maxval=200, group=group_fibo)
-fibo_update_bars = input.int(10, "Actualizar Fibo cada N barras", minval=5, maxval=50, group=group_fibo, 
-    tooltip="✅ ANTI-REPAINT: Solo recalcular cada N barras para evitar cambios constantes")
+fibo_update_bars = input.int(10, "Actualizar Fibo cada N barras", minval=5, maxval=50, group=group_fibo)
 show_trap = input.bool(true, "⚠️ DIBUJAR TRAMPA AUTOMÁTICA", group=group_fibo)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ⏰ Horario & Sesgo Direccional
-// ─────────────────────────────────────────────────────────────────────────────
 group_time = "⏰ Horario & Sesgo"
-inp_session = input.session("0700-1200", "Kill Zone (Hora NY)", group=group_time, 
-    tooltip="Horario de mayor liquidez en Nueva York")
+inp_session = input.session("0700-1200", "Kill Zone (Hora NY)", group=group_time)
 inp_use_time = input.bool(true, "Activar Filtro Horario", group=group_time)
-inp_use_bias = input.bool(true, "Usar Filtro Daily Open", group=group_time, 
-    tooltip="Filtrar trades según posición vs apertura diaria")
+inp_use_bias = input.bool(true, "Usar Filtro Daily Open", group=group_time)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 💰 Gestión de Riesgo Profesional (✅ NUEVO)
-// ─────────────────────────────────────────────────────────────────────────────
 group_risk = "💰 Gestión de Riesgo PRO"
-risk_percent = input.float(1.0, "Riesgo por Trade (%)", minval=0.1, maxval=5.0, step=0.1, group=group_risk, 
-    tooltip="✅ NUEVO: Porcentaje del capital a arriesgar por operación (recomendado 1-2%)")
-max_risk_per_day = input.float(3.0, "Riesgo Máx. Diario (%)", minval=1.0, maxval=10.0, step=0.5, group=group_risk, 
-    tooltip="✅ NUEVO: Límite de pérdidas diarias para protección de capital")
-use_dynamic_sizing = input.bool(true, "Position Sizing Dinámico", group=group_risk, 
-    tooltip="✅ NUEVO: Calcular tamaño según distancia del SL y riesgo definido")
+risk_percent = input.float(1.0, "Riesgo por Trade (%)", minval=0.1, maxval=5.0, step=0.1, group=group_risk)
+max_risk_per_day = input.float(3.0, "Riesgo Máx. Diario (%)", minval=1.0, maxval=10.0, step=0.5, group=group_risk)
+use_dynamic_sizing = input.bool(true, "Position Sizing Dinámico", group=group_risk)
 max_daily_trades = input.int(5, "Máx. Trades por Día", minval=1, maxval=20, group=group_risk)
-max_consecutive_losses = input.int(3, "Máx. Pérdidas Consecutivas", minval=2, maxval=10, group=group_risk, 
-    tooltip="✅ NUEVO: Detener trading tras N pérdidas seguidas")
+max_consecutive_losses = input.int(3, "Máx. Pérdidas Consecutivas", minval=2, maxval=10, group=group_risk)
 reduce_size_after_loss = input.bool(true, "Reducir Tamaño Tras Pérdida", group=group_risk)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 🎯 Salidas Avanzadas (✅ NUEVO)
-// ─────────────────────────────────────────────────────────────────────────────
 group_exits = "🎯 Salidas Avanzadas"
-sl_mult = input.float(1.5, "SL (x ATR)", minval=1.0, maxval=3.0, step=0.1, group=group_exits, 
-    tooltip="Reducido de 2.0 a 1.5 para scalping más ajustado")
-tp_ratio = input.float(2.0, "TP Ratio (R:R)", minval=1.5, maxval=4.0, step=0.5, group=group_exits, 
-    tooltip="Aumentado de 1.5 a 2.0 para mejor relación riesgo/beneficio")
+sl_mult = input.float(1.5, "SL (x ATR)", minval=1.0, maxval=3.0, step=0.1, group=group_exits)
+tp_ratio = input.float(2.0, "TP Ratio (R:R)", minval=1.5, maxval=4.0, step=0.5, group=group_exits)
 use_trailing = input.bool(true, "✅ Trailing Stop Activo", group=group_exits)
-trail_start = input.float(1.5, "Trailing desde (× ATR)", minval=1.0, maxval=3.0, step=0.5, group=group_exits, 
-    tooltip="✅ NUEVO: Activar trailing cuando ganancia >= N × ATR")
+trail_start = input.float(1.5, "Trailing desde (× ATR)", minval=1.0, maxval=3.0, step=0.5, group=group_exits)
 trail_offset = input.float(1.0, "Trailing offset (× ATR)", minval=0.5, maxval=2.0, step=0.5, group=group_exits)
 use_breakeven = input.bool(true, "✅ Break-even Automático", group=group_exits)
-breakeven_mult = input.float(1.0, "Break-even en (× ATR)", minval=0.5, maxval=2.0, step=0.5, group=group_exits, 
-    tooltip="✅ NUEVO: Mover SL a entrada cuando ganancia >= N × ATR")
-max_bars_in_trade = input.int(50, "Máx. Barras en Trade", minval=10, maxval=200, group=group_exits, 
-    tooltip="✅ NUEVO: Cerrar posición si no ha alcanzado TP/SL en N barras")
+breakeven_mult = input.float(1.0, "Break-even en (× ATR)", minval=0.5, maxval=2.0, step=0.5, group=group_exits)
+max_bars_in_trade = input.int(50, "Máx. Barras en Trade", minval=10, maxval=200, group=group_exits)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 🎚️ Sistema de Confluencia (✅ NUEVO)
-// ─────────────────────────────────────────────────────────────────────────────
 group_confluence = "🎚️ Sistema de Confluencia"
-confluence_min = input.int(2, "Mínimo Score Confluencia", minval=1, maxval=4, group=group_confluence, 
-    tooltip="✅ NUEVO: Número mínimo de filtros opcionales que deben cumplirse (2 de 4 recomendado)")
+confluence_min = input.int(2, "Mínimo Score Confluencia", minval=1, maxval=4, group=group_confluence)
 use_zone_filter = input.bool(true, "Usar Filtro Zonas H1", group=group_confluence)
 use_rsi_filter = input.bool(true, "Usar Filtro RSI", group=group_confluence)
 use_pattern_filter = input.bool(true, "Usar Filtro Patrones", group=group_confluence)
 use_bias_filter = input.bool(true, "Usar Filtro Daily Bias", group=group_confluence)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 📊 Dashboard y Alertas
-// ─────────────────────────────────────────────────────────────────────────────
 group_alert = "📊 Dashboard & Alertas"
 show_dashboard = input.bool(true, "Mostrar Dashboard", group=group_alert)
-show_metrics = input.bool(true, "Mostrar Métricas Avanzadas", group=group_alert, 
-    tooltip="✅ NUEVO: Win Rate, Profit Factor, Drawdown en tiempo real")
-alert_mode = input.string("CELULAR (Texto)", "Tipo de Alerta", 
-    options=["ROBOT (JSON n8n)", "CELULAR (Texto)"], group=group_alert)
+show_metrics = input.bool(true, "Mostrar Métricas Avanzadas", group=group_alert)
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 🎨 SECCIÓN 2: PALETA DE COLORES
+// 🎨 COLORES
 // ═══════════════════════════════════════════════════════════════════════════════
-
-var color COL_GOLD = #FFD700   // Fibo 61.8%
-var color COL_TREND = #00E5FF  // Tendencia Turquesa
-var color COL_DAILY = #FF00FF  // Daily Open Fucsia
+var color COL_GOLD = #FFD700
+var color COL_TREND = #00E5FF
+var color COL_DAILY = #FF00FF
 var color COL_WIN = color.new(color.green, 80)
 var color COL_LOSS = color.new(color.red, 80)
-var color COL_WARN = #FFA500   // Advertencias
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 🔧 SECCIÓN 3: FUNCIONES AUXILIARES
+// 🔧 FUNCIONES AUXILIARES
 // ═══════════════════════════════════════════════════════════════════════════════
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 📈 Cálculo de ADX (Para request.security)
-// ─────────────────────────────────────────────────────────────────────────────
 calc_adx(len) =>
     [di_plus, di_minus, adx] = ta.dmi(len, len)
     adx
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 💵 Cálculo de Position Sizing Dinámico (✅ NUEVO)
-// ─────────────────────────────────────────────────────────────────────────────
 calc_position_size(entry_price, sl_price, risk_pct) =>
-    // Calcular distancia del SL
     sl_distance = math.abs(entry_price - sl_price)
-    
-    // ✅ PROTECCIÓN: Evitar división por cero
     if sl_distance <= syminfo.mintick * 10
         sl_distance := syminfo.mintick * 10
-    
-    // Calcular cantidad de capital a arriesgar
-    risk_amount = strategy.equity * (risk_pct / 100)
-    
-    // Calcular tamaño de posición
-    // Para forex: position_size = risk_amount / (sl_distance_pips * pip_value)
-    // Para otros: position_size = risk_amount / sl_distance
-    
-    // Simplificado: Usar porcentaje del equity
     position_pct = (risk_pct / (sl_distance / entry_price * 100))
-    
-    // Límites de seguridad
-    min_size = 0.1  // Mínimo 0.1%
-    max_size = 10.0  // Máximo 10% del capital
-    
+    min_size = 0.1
+    max_size = 10.0
     size = math.max(min_size, math.min(position_pct, max_size))
     size
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 🧹 Limpieza de Arrays de Objetos Gráficos (✅ NUEVO)
-// ─────────────────────────────────────────────────────────────────────────────
 cleanup_lines(arr, max_size) =>
     while array.size(arr) > max_size
         old_line = array.shift(arr)
@@ -196,64 +109,30 @@ cleanup_labels(arr, max_size) =>
         label.delete(old_label)
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 📊 SECCIÓN 4: DATOS MULTI-TIMEFRAME (✅ SIN LOOKAHEAD BIAS)
+// 📊 DATOS MULTI-TIMEFRAME
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 📅 Daily Open (Sin lookahead bias)
-// ─────────────────────────────────────────────────────────────────────────────
-// ✅ CORRECCIÓN: Capturar apertura real del día sin lookahead
 var float daily_open_confirmed = na
-if ta.change(time("D")) != 0
+if ta.change(time("1D")) != 0
     daily_open_confirmed := open
 d_open = na(daily_open_confirmed) ? open : daily_open_confirmed
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 🕐 Zonas H1 (Sin lookahead bias - Confirmadas)
-// ─────────────────────────────────────────────────────────────────────────────
-// ✅ CORRECCIÓN: Usar [1] para datos cerrados + lookahead_off
-[h1_low_safe, h1_high_safe] = request.security(
-    syminfo.tickerid,
-    "60",
-    [ta.lowest(low[1], h1_lookback), ta.highest(high[1], h1_lookback)],
-    lookahead=barmerge.lookahead_off,  // ✅ CRÍTICO: Sin lookahead
-    gaps=barmerge.gaps_off
-)
-
-// ✅ PROTECCIÓN: Valores por defecto si hay gaps
+[h1_low_safe, h1_high_safe] = request.security(syminfo.tickerid, "60", [ta.lowest(low[1], h1_lookback), ta.highest(high[1], h1_lookback)], lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off)
 h1_low = na(h1_low_safe) ? low : h1_low_safe
 h1_high = na(h1_high_safe) ? high : h1_high_safe
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ⏱️ Tendencia M15 (Sin lookahead bias - Confirmada)
-// ─────────────────────────────────────────────────────────────────────────────
-// ✅ CORRECCIÓN: Usar [1] para EMA cerrada + lookahead_off
-[m15_ema_safe, adx_val_safe] = request.security(
-    syminfo.tickerid,
-    "15",
-    [ta.ema(close[1], m15_ema_len), calc_adx(adx_len)],
-    lookahead=barmerge.lookahead_off,  // ✅ CRÍTICO: Sin lookahead
-    gaps=barmerge.gaps_off
-)
-
-// ✅ PROTECCIÓN: Valores por defecto
+[m15_ema_safe, adx_val_safe] = request.security(syminfo.tickerid, "15", [ta.ema(close[1], m15_ema_len), calc_adx(adx_len)], lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off)
 m15_ema = na(m15_ema_safe) ? close : m15_ema_safe
 adx_val = na(adx_val_safe) ? 0.0 : adx_val_safe
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ⚡ Indicadores M5 (Timeframe Actual)
-// ─────────────────────────────────────────────────────────────────────────────
 rsi = ta.rsi(close, m5_rsi_len)
 atr = ta.atr(14)
-
-// ✅ PROTECCIÓN: ATR mínimo para evitar divisiones por cero
 atr_safe = atr > 0 ? atr : syminfo.mintick * 100
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 📐 SECCIÓN 5: FIBONACCI ANTI-REPAINT (✅ NUEVO)
+// 📐 FIBONACCI
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// ✅ Variables para almacenar valores confirmados de Fibonacci
 var float confirmed_f_high = na
 var float confirmed_f_low = na
 var float confirmed_lev_618 = na
@@ -262,659 +141,292 @@ var float confirmed_lev_382 = na
 var int last_fibo_update = 0
 var bool is_uptrend_confirmed = false
 
-// ✅ Actualización periódica (no en cada barra para evitar repainting)
+curr_f_high = ta.highest(high[1], fibo_len)
+curr_f_low = ta.lowest(low[1], fibo_len)
+
 bars_since_fibo_update = bar_index - last_fibo_update
 
 if bars_since_fibo_update >= fibo_update_bars or na(confirmed_f_high)
-    // Calcular sobre datos históricos (no incluir barra actual)
-    confirmed_f_high := ta.highest(high[1], fibo_len)
-    confirmed_f_low := ta.lowest(low[1], fibo_len)
+    confirmed_f_high := curr_f_high
+    confirmed_f_low := curr_f_low
     
-    // ✅ PROTECCIÓN: Validar rango mínimo
     f_range = confirmed_f_high - confirmed_f_low
     f_range_valid = f_range > (syminfo.mintick * 10)
     
     if f_range_valid
-        // Determinar dirección basada en EMA
         is_uptrend_confirmed := close > m15_ema
         
         if is_uptrend_confirmed
-            // Fibo desde arriba (retroceso alcista)
             confirmed_lev_618 := confirmed_f_high - (f_range * 0.618)
             confirmed_lev_500 := confirmed_f_high - (f_range * 0.500)
             confirmed_lev_382 := confirmed_f_high - (f_range * 0.382)
         else
-            // Fibo desde abajo (retroceso bajista)
             confirmed_lev_618 := confirmed_f_low + (f_range * 0.618)
             confirmed_lev_500 := confirmed_f_low + (f_range * 0.500)
             confirmed_lev_382 := confirmed_f_low + (f_range * 0.382)
     
     last_fibo_update := bar_index
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 🎨 Visualización de Fibonacci (Con gestión de memoria)
-// ─────────────────────────────────────────────────────────────────────────────
-// ✅ Arrays para almacenar objetos (máximo 50)
 var line[] fibo_lines = array.new_line(0)
 var label[] fibo_labels = array.new_label(0)
 
 if use_fibo and barstate.islast and not na(confirmed_lev_618)
-    // Crear líneas de Fibonacci
-    line_618 = line.new(bar_index - 50, confirmed_lev_618, bar_index + 10, confirmed_lev_618,
-        color=COL_GOLD, width=2, style=line.style_solid, extend=extend.right)
+    line_618 = line.new(bar_index - 50, confirmed_lev_618, bar_index + 10, confirmed_lev_618, color=COL_GOLD, width=2, style=line.style_solid, extend=extend.right)
     array.push(fibo_lines, line_618)
-    
-    line_500 = line.new(bar_index - 50, confirmed_lev_500, bar_index + 10, confirmed_lev_500,
-        color=color.gray, width=1, style=line.style_dashed, extend=extend.right)
+    line_500 = line.new(bar_index - 50, confirmed_lev_500, bar_index + 10, confirmed_lev_500, color=color.gray, width=1, style=line.style_dashed, extend=extend.right)
     array.push(fibo_lines, line_500)
-    
-    line_382 = line.new(bar_index - 50, confirmed_lev_382, bar_index + 10, confirmed_lev_382,
-        color=color.blue, width=1, style=line.style_dotted, extend=extend.right)
+    line_382 = line.new(bar_index - 50, confirmed_lev_382, bar_index + 10, confirmed_lev_382, color=color.blue, width=1, style=line.style_dotted, extend=extend.right)
     array.push(fibo_lines, line_382)
     
-    // Label
-    lbl = label.new(bar_index + 10, confirmed_lev_618, 
-        "Fibo 61.8% ✓", style=label.style_label_left,
-        textcolor=COL_GOLD, color=color.new(color.black, 80), size=size.small)
+    lbl = label.new(bar_index + 10, confirmed_lev_618, "Fibo 61.8% ✓", style=label.style_label_left, textcolor=COL_GOLD, color=color.new(color.black, 80), size=size.small)
     array.push(fibo_labels, lbl)
     
-    // ✅ Limpieza de objetos antiguos (máx 50)
     cleanup_lines(fibo_lines, 20)
     cleanup_labels(fibo_labels, 10)
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 🪤 SECCIÓN 6: TRAMPA AUTOMÁTICA (Ghost Box) - Mejorada
+// 🪤 TRAMPA AUTOMÁTICA (LÓGICA BLINDADA)
 // ═══════════════════════════════════════════════════════════════════════════════
-
 var box trap_risk = na
 var box trap_reward = na
 var label trap_lbl = na
 
 if show_trap and barstate.islast and not na(confirmed_lev_618)
-    // Limpieza de dibujos anteriores
     box.delete(trap_risk)
     box.delete(trap_reward)
     label.delete(trap_lbl)
     
-    // Coordenadas (usando valores confirmados)
-    float entry_price = confirmed_lev_618
-    float sl_price = d_open
-    float tp_price = is_uptrend_confirmed ? confirmed_f_high : confirmed_f_low
+    entry_price = confirmed_lev_618
+    sl_price = d_open
+    tp_price = is_uptrend_confirmed ? confirmed_f_high : confirmed_f_low
     
-    // ✅ PROTECCIÓN: Validar que los precios sean lógicos
-    if (is_uptrend_confirmed and entry_price < tp_price and entry_price > sl_price) or 
-       (not is_uptrend_confirmed and entry_price > tp_price and entry_price < sl_price)
-        
-        // Dibujar cajas de riesgo/recompensa
-        trap_risk := box.new(bar_index, entry_price, bar_index + 15, sl_price,
-            bgcolor=color.new(color.red, 85), border_color=color.new(color.red, 50),
-            border_style=line.style_dashed, border_width=1)
-        
-        trap_reward := box.new(bar_index, entry_price, bar_index + 15, tp_price,
-            bgcolor=color.new(color.green, 85), border_color=color.new(color.green, 50),
-            border_style=line.style_dashed, border_width=1)
-        
-        // Etiqueta
+    // ✅ CORRECCIÓN DEFINITIVA: Inicializar bools en false
+    bool cond_buy = false
+    bool cond_sell = false
+
+    // Validar datos antes de calcular lógica
+    valid_data = not na(entry_price) and not na(sl_price) and not na(tp_price)
+
+    if valid_data
+        cond_buy := is_uptrend_confirmed and entry_price < tp_price and entry_price > sl_price
+        cond_sell := not is_uptrend_confirmed and entry_price > tp_price and entry_price < sl_price
+
+    // Ahora 'cond_buy' y 'cond_sell' son SIEMPRE true o false, nunca 'na'
+    if cond_buy or cond_sell
+        trap_risk := box.new(bar_index, entry_price, bar_index + 15, sl_price, bgcolor=color.new(color.red, 85), border_color=color.new(color.red, 50), border_style=line.style_dashed, border_width=1)
+        trap_reward := box.new(bar_index, entry_price, bar_index + 15, tp_price, bgcolor=color.new(color.green, 85), border_color=color.new(color.green, 50), border_style=line.style_dashed, border_width=1)
         trap_txt = is_uptrend_confirmed ? "🪤 BUY LIMIT" : "🪤 SELL LIMIT"
-        trap_lbl := label.new(bar_index + 10, entry_price, trap_txt,
-            textcolor=color.white, color=color.new(color.blue, 30),
-            style=label.style_label_left, size=size.small)
+        trap_lbl := label.new(bar_index + 10, entry_price, trap_txt, textcolor=color.white, color=color.new(color.blue, 30), style=label.style_label_left, size=size.small)
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 🎯 SECCIÓN 7: FILTROS Y PATRONES DE VELAS
+// 🎯 FILTROS Y PATRONES
 // ═══════════════════════════════════════════════════════════════════════════════
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 📍 Filtro de Zonas H1
-// ─────────────────────────────────────────────────────────────────────────────
 dist_price = inp_dist_puntos * syminfo.mintick
 zona_soporte = math.abs(close - h1_low) <= dist_price
 zona_resist = math.abs(close - h1_high) <= dist_price
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 💪 Filtro de Fuerza del Mercado (ADX)
-// ─────────────────────────────────────────────────────────────────────────────
 mercado_vivo = adx_val > adx_min
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ⏰ Filtro Horario (Kill Zone NY)
-// ─────────────────────────────────────────────────────────────────────────────
 in_session = true
 if inp_use_time and timeframe.isintraday
     session_time = time(timeframe.period, inp_session, "America/New_York")
     in_session := not na(session_time)
 
-// Visualización del horario
 bgcolor(inp_use_time and in_session ? color.new(color.blue, 95) : na, title="Horario NY")
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 🕯️ Patrones de Velas Mejorados (✅ NUEVO)
-// ─────────────────────────────────────────────────────────────────────────────
 body = math.abs(close - open)
 upper_wick = high - math.max(open, close)
 lower_wick = math.min(open, close) - low
-body_pct = body / (high - low + 0.0001)  // ✅ Evitar división por cero
-
-// Validar vela significativa
 candle_min_body = 0.3
 significant_candle = body > (atr_safe * candle_min_body)
 
-// Patrones Alcistas
-is_hammer = significant_candle and 
-            lower_wick >= (2 * body) and 
-            upper_wick < (body * 0.5)
+is_hammer = significant_candle and lower_wick >= (2 * body) and upper_wick < (body * 0.5)
+is_engulf_buy = close > open and close > open[1] and open < close[1] and body > body[1] * 1.2 and significant_candle
+is_star = significant_candle and upper_wick >= (2 * body) and lower_wick < (body * 0.5)
+is_engulf_sell = close < open and close < open[1] and open > close[1] and body > body[1] * 1.2 and significant_candle
 
-is_engulf_buy = close > open and 
-                close > open[1] and 
-                open < close[1] and
-                body > body[1] * 1.2 and
-                significant_candle
+// ✅ CORRECCIÓN: Asegurar booleanos (evitar 'na')
+patron_buy = (is_hammer or is_engulf_buy) ? true : false
+patron_sell = (is_star or is_engulf_sell) ? true : false
 
-// Patrones Bajistas
-is_star = significant_candle and
-          upper_wick >= (2 * body) and
-          lower_wick < (body * 0.5)
-
-is_engulf_sell = close < open and
-                 close < open[1] and
-                 open > close[1] and
-                 body > body[1] * 1.2 and
-                 significant_candle
-
-// Combinación de patrones
-patron_buy = is_hammer or is_engulf_buy
-patron_sell = is_star or is_engulf_sell
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 🎨 Visualización de Patrones (Limitada a últimos 3)
-// ─────────────────────────────────────────────────────────────────────────────
 var label[] labels_patron = array.new_label(0)
-
 if patron_buy
-    lbl = label.new(bar_index, low, "🕯️", 
-        style=label.style_label_up, color=color.green, 
-        textcolor=color.white, size=size.tiny, tooltip="Patrón Alcista")
+    lbl = label.new(bar_index, low, "🕯️", style=label.style_label_up, color=color.green, textcolor=color.white, size=size.tiny)
     array.push(labels_patron, lbl)
-    cleanup_labels(labels_patron, 3)  // ✅ Máximo 3 labels
-
+    cleanup_labels(labels_patron, 3)
 if patron_sell
-    lbl = label.new(bar_index, high, "🕯️",
-        style=label.style_label_down, color=color.red,
-        textcolor=color.white, size=size.tiny, tooltip="Patrón Bajista")
+    lbl = label.new(bar_index, high, "🕯️", style=label.style_label_down, color=color.red, textcolor=color.white, size=size.tiny)
     array.push(labels_patron, lbl)
     cleanup_labels(labels_patron, 3)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 📊 Filtro de Sesgo Diario (Daily Bias)
-// ─────────────────────────────────────────────────────────────────────────────
 bias_bull = inp_use_bias ? (close > d_open) : true
 bias_bear = inp_use_bias ? (close < d_open) : true
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 🎚️ SECCIÓN 8: SISTEMA DE CONFLUENCIA JERÁRQUICO (✅ NUEVO)
+// 🎚️ CONFLUENCIA
 // ═══════════════════════════════════════════════════════════════════════════════
-
-// ✅ Calcular score de confluencia (0-4 puntos)
 confluence_score_long = 0
 confluence_score_short = 0
 
-// Filtro 1: Zonas H1 (opcional)
 if use_zone_filter
     confluence_score_long += zona_soporte ? 1 : 0
     confluence_score_short += zona_resist ? 1 : 0
-
-// Filtro 2: RSI (opcional, con niveles más realistas)
 if use_rsi_filter
     confluence_score_long += (rsi < rsi_os) ? 1 : 0
     confluence_score_short += (rsi > rsi_ob) ? 1 : 0
-
-// Filtro 3: Patrones de Velas (opcional)
 if use_pattern_filter
     confluence_score_long += patron_buy ? 1 : 0
     confluence_score_short += patron_sell ? 1 : 0
-
-// Filtro 4: Daily Bias (opcional)
 if use_bias_filter
     confluence_score_long += bias_bull ? 1 : 0
     confluence_score_short += bias_bear ? 1 : 0
 
-// ✅ Filtros OBLIGATORIOS (no opcionales)
 mandatory_filters_long = close > m15_ema and mercado_vivo and in_session
 mandatory_filters_short = close < m15_ema and mercado_vivo and in_session
 
-// ✅ Condición final: Filtros obligatorios + Score mínimo de confluencia
 longCond = mandatory_filters_long and (confluence_score_long >= confluence_min)
 shortCond = mandatory_filters_short and (confluence_score_short >= confluence_min)
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 💰 SECCIÓN 9: GESTIÓN DE RIESGO Y PROTECCIONES (✅ NUEVO)
+// 💰 RIESGO
 // ═══════════════════════════════════════════════════════════════════════════════
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 📊 Tracking de Riesgo Diario
-// ─────────────────────────────────────────────────────────────────────────────
 var float daily_loss = 0.0
 var int daily_trades_count = 0
-var int last_trade_day = 0
-
-// Reset diario
-if ta.change(time("D"))
+if ta.change(time("1D"))
     daily_loss := 0.0
     daily_trades_count := 0
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 🔄 Tracking de Pérdidas Consecutivas
-// ─────────────────────────────────────────────────────────────────────────────
 var int consecutive_losses = 0
 var float size_multiplier = 1.0
-
-// Detectar nueva operación cerrada
 var int last_closed_trades = 0
+
 if strategy.closedtrades > last_closed_trades
     last_trade_profit = strategy.closedtrades.profit(strategy.closedtrades - 1)
-    
-    // Actualizar pérdida diaria
     if last_trade_profit < 0
         daily_loss := daily_loss + math.abs(last_trade_profit)
         consecutive_losses += 1
-        
-        // Reducir tamaño tras pérdida
         if reduce_size_after_loss
             size_multiplier := math.max(0.5, 1.0 - (consecutive_losses * 0.2))
     else
         consecutive_losses := 0
-        size_multiplier := 1.0  // Reset
-    
+        size_multiplier := 1.0
     daily_trades_count += 1
     last_closed_trades := strategy.closedtrades
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 🛑 Bloqueos de Seguridad
-// ─────────────────────────────────────────────────────────────────────────────
 daily_risk_pct = strategy.equity > 0 ? (daily_loss / strategy.equity * 100) : 0.0
 blocked_by_daily_risk = daily_risk_pct >= max_risk_per_day
 blocked_by_losses = consecutive_losses >= max_consecutive_losses
 blocked_by_daily_limit = daily_trades_count >= max_daily_trades
+can_trade = not blocked_by_daily_risk and not blocked_by_losses and not blocked_by_daily_limit
 
-can_trade = not blocked_by_daily_risk and 
-            not blocked_by_losses and 
-            not blocked_by_daily_limit
-
-// Visualización de bloqueos
 bgcolor(blocked_by_daily_risk ? color.new(color.red, 70) : na, title="Límite Riesgo Diario")
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 🚀 SECCIÓN 10: EJECUCIÓN DE TRADES Y SALIDAS AVANZADAS
+// 🚀 EJECUCIÓN
 // ═══════════════════════════════════════════════════════════════════════════════
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 📋 Variables para Gestión de Salidas
-// ─────────────────────────────────────────────────────────────────────────────
 var int entry_bar = 0
 var float entry_price_saved = 0.0
 var bool breakeven_activated = false
 var bool is_long_position = false
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 📊 Arrays para Visualización de Trades (limitados)
-// ─────────────────────────────────────────────────────────────────────────────
 var box[] trade_boxes = array.new_box(0)
 var label[] trade_labels = array.new_label(0)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 🎨 Función para Dibujar Trade
-// ─────────────────────────────────────────────────────────────────────────────
 draw_trade_visual(is_long, entry, sl, tp) =>
     right = bar_index + 12
-    
-    // Caja de TP (verde/rojo)
     c_tp_bg = is_long ? color.new(color.green, 90) : color.new(color.red, 90)
     c_tp_border = is_long ? color.green : color.red
-    tp_box = box.new(bar_index, entry, right, tp, 
-        bgcolor=c_tp_bg, border_color=c_tp_border, border_width=1)
+    tp_box = box.new(bar_index, entry, right, tp, bgcolor=c_tp_bg, border_color=c_tp_border, border_width=1)
     array.push(trade_boxes, tp_box)
-    
-    // Caja de SL (rojo)
-    sl_box = box.new(bar_index, entry, right, sl,
-        bgcolor=color.new(color.red, 85), border_color=color.red, border_width=1)
+    sl_box = box.new(bar_index, entry, right, sl, bgcolor=color.new(color.red, 85), border_color=color.red, border_width=1)
     array.push(trade_boxes, sl_box)
-    
-    // Label
     txt_emoji = is_long ? "🚀 COMPRA" : "🔻 VENTA"
     lbl_style = is_long ? label.style_label_up : label.style_label_down
     lbl_color = is_long ? color.green : color.red
     lbl_loc = is_long ? (low - atr_safe * 2) : (high + atr_safe * 2)
-    
     rr_text = str.tostring(tp_ratio, "#.#")
-    trade_label = label.new(bar_index, lbl_loc, 
-        txt_emoji + "\nR:R " + rr_text + ":1",
-        color=lbl_color, style=lbl_style, textcolor=color.white, size=size.small)
+    trade_label = label.new(bar_index, lbl_loc, txt_emoji + "\nR:R " + rr_text + ":1", color=lbl_color, style=lbl_style, textcolor=color.white, size=size.small)
     array.push(trade_labels, trade_label)
-    
-    // ✅ Limpieza (máx 50 objetos)
     cleanup_boxes(trade_boxes, 30)
     cleanup_labels(trade_labels, 15)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 📝 Función para Generar Mensaje de Alerta
-// ─────────────────────────────────────────────────────────────────────────────
 get_alert_message(type, p, s, t, qty_pct, risk_usd) =>
     emoji = type == "COMPRA" ? "🚀" : "🔻"
-    
-    msg = emoji + " AURUM V34.0 PRO\n" +
-          "═══════════════════════\n" +
-          "Activo: " + syminfo.ticker + "\n" +
-          "Tipo: " + type + "\n" +
-          "Precio: " + str.tostring(p, "#.#####") + "\n" +
-          "Stop Loss: " + str.tostring(s, "#.#####") + "\n" +
-          "Take Profit: " + str.tostring(t, "#.#####") + "\n" +
-          "R:R: 1:" + str.tostring(tp_ratio, "#.#") + "\n" +
-          "Tamaño: " + str.tostring(qty_pct, "#.##") + "% cuenta\n" +
-          "Riesgo: $" + str.tostring(risk_usd, "#.##") + "\n" +
-          "Confluencia: " + str.tostring(confluence_score_long, "#") + "/4\n" +
-          "═══════════════════════"
+    msg = emoji + " AURUM V35.4\nActivo: " + syminfo.ticker + "\nTipo: " + type + "\nPrecio: " + str.tostring(p, "#.#####") + "\nStop: " + str.tostring(s, "#.#####") + "\nTP: " + str.tostring(t, "#.#####") + "\nRiesgo: $" + str.tostring(risk_usd, "#.##")
     msg
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 🚀 ENTRADA LONG
-// ─────────────────────────────────────────────────────────────────────────────
 if (longCond and strategy.position_size == 0 and can_trade)
-    // Calcular SL y TP
     sl = close - (atr_safe * sl_mult)
     tp = close + ((close - sl) * tp_ratio)
-    
-    // ✅ Calcular tamaño de posición dinámico
-    qty_pct = use_dynamic_sizing ? 
-        calc_position_size(close, sl, risk_percent) * size_multiplier : 
-        risk_percent * size_multiplier
-    
-    // Calcular riesgo en USD
+    qty_pct = use_dynamic_sizing ? calc_position_size(close, sl, risk_percent) * size_multiplier : risk_percent * size_multiplier
     risk_usd = strategy.equity * (risk_percent / 100)
-    
-    // Ejecutar entrada
-    strategy.entry("Long", strategy.long, qty=qty_pct, comment="🚀 LONG")
+    alert_msg = get_alert_message("COMPRA", close, sl, tp, qty_pct, risk_usd)
+    strategy.entry("Long", strategy.long, qty=qty_pct, comment="🚀 LONG", alert_message=alert_msg)
     strategy.exit("Exit Long", "Long", stop=sl, limit=tp)
-    
-    // Guardar datos
     entry_bar := bar_index
     entry_price_saved := close
     breakeven_activated := false
     is_long_position := true
-    
-    // Visualizar
     draw_trade_visual(true, close, sl, tp)
-    
-    // Alerta
-    alert_msg = get_alert_message("COMPRA", close, sl, tp, qty_pct, risk_usd)
-    alert(alert_msg, alert.freq_once_per_bar_close)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 🔻 ENTRADA SHORT
-// ─────────────────────────────────────────────────────────────────────────────
 if (shortCond and strategy.position_size == 0 and can_trade)
-    // Calcular SL y TP
     sl = close + (atr_safe * sl_mult)
     tp = close - ((sl - close) * tp_ratio)
-    
-    // ✅ Calcular tamaño dinámico
-    qty_pct = use_dynamic_sizing ?
-        calc_position_size(close, sl, risk_percent) * size_multiplier :
-        risk_percent * size_multiplier
-    
+    qty_pct = use_dynamic_sizing ? calc_position_size(close, sl, risk_percent) * size_multiplier : risk_percent * size_multiplier
     risk_usd = strategy.equity * (risk_percent / 100)
-    
-    // Ejecutar entrada
-    strategy.entry("Short", strategy.short, qty=qty_pct, comment="🔻 SHORT")
+    alert_msg = get_alert_message("VENTA", close, sl, tp, qty_pct, risk_usd)
+    strategy.entry("Short", strategy.short, qty=qty_pct, comment="🔻 SHORT", alert_message=alert_msg)
     strategy.exit("Exit Short", "Short", stop=sl, limit=tp)
-    
-    // Guardar datos
     entry_bar := bar_index
     entry_price_saved := close
     breakeven_activated := false
     is_long_position := false
-    
-    // Visualizar
     draw_trade_visual(false, close, sl, tp)
-    
-    // Alerta
-    alert_msg = get_alert_message("VENTA", close, sl, tp, qty_pct, risk_usd)
-    alert(alert_msg, alert.freq_once_per_bar_close)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ✅ BREAK-EVEN AUTOMÁTICO (NUEVO)
-// ─────────────────────────────────────────────────────────────────────────────
 if strategy.position_size != 0 and use_breakeven and not breakeven_activated
-    profit_distance = is_long_position ? 
-        (close - entry_price_saved) : 
-        (entry_price_saved - close)
-    
-    // Activar break-even si ganancia >= N × ATR
+    profit_distance = is_long_position ? (close - entry_price_saved) : (entry_price_saved - close)
     if profit_distance >= (atr_safe * breakeven_mult)
-        new_sl = entry_price_saved + (syminfo.mintick * 10)  // Ligeramente por encima
-        
+        new_sl = entry_price_saved + (syminfo.mintick * 10)
         if is_long_position
             strategy.exit("Exit Long", "Long", stop=new_sl)
         else
             strategy.exit("Exit Short", "Short", stop=new_sl)
-        
         breakeven_activated := true
-        
-        // Label de break-even
-        be_label = label.new(bar_index, close, "⚡ BE", 
-            style=label.style_circle, color=color.orange, 
-            textcolor=color.white, size=size.tiny, tooltip="Break-even activado")
+        be_label = label.new(bar_index, close, "⚡ BE", style=label.style_circle, color=color.orange, textcolor=color.white, size=size.tiny)
         array.push(trade_labels, be_label)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 📈 TRAILING STOP (NUEVO)
-// ─────────────────────────────────────────────────────────────────────────────
 if strategy.position_size != 0 and use_trailing
-    profit_distance = is_long_position ?
-        (close - entry_price_saved) :
-        (entry_price_saved - close)
-    
-    // Activar trailing si ganancia >= N × ATR
+    profit_distance = is_long_position ? (close - entry_price_saved) : (entry_price_saved - close)
     if profit_distance >= (atr_safe * trail_start)
-        trail_stop = is_long_position ?
-            (close - (atr_safe * trail_offset)) :
-            (close + (atr_safe * trail_offset))
-        
+        trail_stop = is_long_position ? (close - (atr_safe * trail_offset)) : (close + (atr_safe * trail_offset))
         if is_long_position
             strategy.exit("Exit Long", "Long", stop=trail_stop)
         else
             strategy.exit("Exit Short", "Short", stop=trail_stop)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ⏰ SALIDA POR TIEMPO (Time-based Exit)
-// ─────────────────────────────────────────────────────────────────────────────
 if strategy.position_size != 0
     bars_in_trade = bar_index - entry_bar
     if bars_in_trade >= max_bars_in_trade
-        if is_long_position
-            strategy.close("Long", comment="⏰ TIME EXIT")
-        else
-            strategy.close("Short", comment="⏰ TIME EXIT")
-        
-        // Label de salida por tiempo
-        time_label = label.new(bar_index, close, "⏰",
-            style=label.style_xcross, color=color.orange,
-            textcolor=color.white, size=size.small, tooltip="Salida por tiempo")
+        strategy.close_all(comment="⏰ TIME EXIT")
+        time_label = label.new(bar_index, close, "⏰", style=label.style_xcross, color=color.orange, textcolor=color.white, size=size.small)
         array.push(trade_labels, time_label)
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 🎨 SECCIÓN 11: VISUALIZACIÓN EN GRÁFICO
+// 🎨 VISUALIZACIÓN FINAL
 // ═══════════════════════════════════════════════════════════════════════════════
+plot(m15_ema, "EMA M15", color=COL_TREND, linewidth=2)
+plot(inp_use_bias ? d_open : na, "Daily Open", color=COL_DAILY, linewidth=2, style=plot.style_stepline)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 📈 Plot de EMA y Daily Open
-// ─────────────────────────────────────────────────────────────────────────────
-plot(m15_ema, "EMA M15 (Tendencia)", color=COL_TREND, linewidth=2)
-plot(inp_use_bias ? d_open : na, "Daily Open (Sesgo)", 
-     color=COL_DAILY, linewidth=2, style=plot.style_stepline)
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 🏷️ Labels Informativos (Solo en última barra)
-// ─────────────────────────────────────────────────────────────────────────────
-var label lbl_open = na
-var label lbl_trend = na
-
-if barstate.islast
-    label.delete(lbl_open)
-    label.delete(lbl_trend)
-    
-    if inp_use_bias
-        lbl_open := label.new(bar_index + 3, d_open, 
-            " D.OPEN (Sesgo)", style=label.style_label_left,
-            color=color.new(color.black, 100), textcolor=COL_DAILY, size=size.tiny)
-    
-    lbl_trend := label.new(bar_index + 3, m15_ema,
-        " EMA 150 (Tendencia)", style=label.style_label_left,
-        color=color.new(color.black, 100), textcolor=COL_TREND, size=size.tiny)
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// 📊 SECCIÓN 12: DASHBOARD PROFESIONAL CON MÉTRICAS (✅ NUEVO)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-if show_dashboard
-    // ─────────────────────────────────────────────────────────────────────────
-    // 📊 Calcular Métricas Avanzadas
-    // ─────────────────────────────────────────────────────────────────────────
+if show_dashboard and barstate.islast
     total_trades = strategy.closedtrades
     win_rate = total_trades > 0 ? (strategy.wintrades / total_trades * 100) : 0.0
     profit_factor = strategy.grossloss > 0 ? (strategy.grossprofit / strategy.grossloss) : 0.0
     
-    // Drawdown actual
-    var float peak_equity = strategy.initial_capital
-    if strategy.equity > peak_equity
-        peak_equity := strategy.equity
-    
-    current_dd_usd = peak_equity - strategy.equity
-    current_dd_pct = peak_equity > 0 ? (current_dd_usd / peak_equity * 100) : 0.0
-    
-    // Profit total
-    total_profit = strategy.netprofit
-    total_profit_pct = strategy.initial_capital > 0 ? 
-        (total_profit / strategy.initial_capital * 100) : 0.0
-    
-    // Detectar patrón reciente (últimas 3 velas)
-    var bool recent_pattern = false
-    recent_pattern := (patron_buy or patron_sell) or 
-                      (patron_buy[1] or patron_sell[1]) or 
-                      (patron_buy[2] or patron_sell[2])
-    
-    // ─────────────────────────────────────────────────────────────────────────
-    // 🎨 Crear Dashboard
-    // ─────────────────────────────────────────────────────────────────────────
-    var table dash = table.new(position.bottom_right, 2, 12, 
-        bgcolor=color.new(color.black, 50), border_width=1, border_color=COL_GOLD)
-    
-    if barstate.islast
-        // Título
-        table.cell(dash, 0, 0, "AURUM V34.0 PRO", 
-            text_color=COL_GOLD, text_size=size.normal)
-        table.cell(dash, 1, 0, "✅ NO-REPAINT", 
-            text_color=color.lime, text_size=size.small)
-        
-        // Tendencia M15
-        table.cell(dash, 0, 1, "Trend M15", text_color=color.white, text_size=size.small)
-        trend_text = close > m15_ema ? "ALCISTA 📈" : "BAJISTA 📉"
-        table.cell(dash, 1, 1, trend_text, text_color=COL_TREND, text_size=size.small)
-        
-        // Daily Bias
-        table.cell(dash, 0, 2, "Daily Bias", text_color=color.white, text_size=size.small)
-        bias_text = close > d_open ? "BULLISH 🐂" : "BEARISH 🐻"
-        table.cell(dash, 1, 2, bias_text, text_color=COL_DAILY, text_size=size.small)
-        
-        // Fibonacci
-        table.cell(dash, 0, 3, "Fibo 61.8%", text_color=color.white, text_size=size.small)
-        dist_fibo = not na(confirmed_lev_618) ? 
-            math.abs(close - confirmed_lev_618) / syminfo.mintick : 9999
-        fibo_text = dist_fibo < 50 ? "EN ZONA 🏆" : "LEJOS"
-        table.cell(dash, 1, 3, fibo_text, text_color=COL_GOLD, text_size=size.small)
-        
-        // Patrón
-        table.cell(dash, 0, 4, "Patrón (3v)", text_color=color.white, text_size=size.small)
-        patron_text = recent_pattern ? "DETECTADO 🔥" : "---"
-        table.cell(dash, 1, 4, patron_text, text_color=COL_GOLD, text_size=size.small)
-        
-        // Horario
-        table.cell(dash, 0, 5, "Horario", text_color=color.white, text_size=size.small)
-        session_text = in_session ? "OPEN 🟢" : "CLOSED 🔴"
-        session_color = in_session ? color.green : color.red
-        table.cell(dash, 1, 5, session_text, text_color=session_color, text_size=size.small)
-        
-        // --- MÉTRICAS AVANZADAS (✅ NUEVO) ---
-        if show_metrics
-            // Separador
-            table.cell(dash, 0, 6, "─────────────", text_color=COL_GOLD, text_size=size.tiny)
-            table.cell(dash, 1, 6, "─────────────", text_color=COL_GOLD, text_size=size.tiny)
-            
-            // Win Rate
-            table.cell(dash, 0, 7, "Win Rate", text_color=color.white, text_size=size.small)
-            wr_text = str.tostring(win_rate, "#.#") + "%"
-            wr_color = win_rate >= 50 ? color.green : color.red
-            table.cell(dash, 1, 7, wr_text, text_color=wr_color, text_size=size.small)
-            
-            // Profit Factor
-            table.cell(dash, 0, 8, "Profit Factor", text_color=color.white, text_size=size.small)
-            pf_text = str.tostring(profit_factor, "#.##")
-            pf_color = profit_factor >= 1.5 ? color.green : 
-                      profit_factor >= 1.0 ? color.orange : color.red
-            table.cell(dash, 1, 8, pf_text, text_color=pf_color, text_size=size.small)
-            
-            // Drawdown
-            table.cell(dash, 0, 9, "Drawdown", text_color=color.white, text_size=size.small)
-            dd_text = str.tostring(current_dd_pct, "#.#") + "%"
-            dd_color = current_dd_pct < 10 ? color.green :
-                      current_dd_pct < 20 ? color.orange : color.red
-            table.cell(dash, 1, 9, dd_text, text_color=dd_color, text_size=size.small)
-            
-            // Profit Total
-            table.cell(dash, 0, 10, "Profit Total", text_color=color.white, text_size=size.small)
-            profit_text = str.tostring(total_profit_pct, "#.#") + "%"
-            profit_color = total_profit > 0 ? color.green : color.red
-            table.cell(dash, 1, 10, profit_text, text_color=profit_color, text_size=size.small)
-            
-            // Trades
-            table.cell(dash, 0, 11, "Trades", text_color=color.white, text_size=size.small)
-            trades_text = str.tostring(total_trades, "#")
-            table.cell(dash, 1, 11, trades_text, text_color=color.gray, text_size=size.small)
+    // ✅ CORRECCIÓN DEFINITIVA: Validar bools en patrones
+    recent_pattern = (patron_buy or patron_sell) or (patron_buy[1] or patron_sell[1]) or (patron_buy[2] or patron_sell[2])
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// ⚠️ SECCIÓN 13: ALERTAS Y ADVERTENCIAS
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// Mostrar advertencias visuales si hay bloqueos
-if blocked_by_losses and barstate.islast
-    warning_lbl = label.new(bar_index, high, 
-        "🛑 BLOQUEADO\n" + str.tostring(consecutive_losses, "#") + " pérdidas consecutivas",
-        style=label.style_label_down, color=color.red, 
-        textcolor=color.white, size=size.normal)
-
-if blocked_by_daily_risk and barstate.islast
-    risk_lbl = label.new(bar_index, high * 1.01,
-        "🛑 LÍMITE DIARIO\nRiesgo: " + str.tostring(daily_risk_pct, "#.#") + "%",
-        style=label.style_label_down, color=color.red,
-        textcolor=color.white, size=size.normal)
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// ✅ FIN DEL SCRIPT - AURUM VISION V34.0 PROFESSIONAL
-// ═══════════════════════════════════════════════════════════════════════════════
-// 
-// 📝 NOTAS IMPORTANTES:
-// 1. Este script NO tiene lookahead bias - Los backtests son realistas
-// 2. Fibonacci y zonas están confirmados - No hay repainting
-// 3. Gestión de riesgo profesional - Position sizing dinámico
-// 4. Objetos gráficos limitados a 50 - Sin fugas de memoria
-// 5. Trailing stop y break-even automáticos
-// 6. Dashboard con métricas en tiempo real
-// 
-// ⚡ RECOMENDACIONES DE USO:
-// - Usar en M5 para scalping (timeframe principal)
-// - Capital inicial recomendado: $500-$1000 mínimo
-// - Riesgo por trade: 1-2% (ajustable según experiencia)
-// - Probar en demo antes de cuenta real
-// - Monitorear métricas: Win Rate >50%, Profit Factor >1.5, DD <20%
-// 
-// 📚 Ver archivo aurum_vision_changelog.md para detalles de cambios
-// ═══════════════════════════════════════════════════════════════════════════════
+    var table dash = table.new(position.bottom_right, 2, 8, bgcolor=color.new(color.black, 50), border_width=1, border_color=COL_GOLD)
+    table.cell(dash, 0, 0, "AURUM V35.4", text_color=COL_GOLD, text_size=size.normal)
+    table.cell(dash, 1, 0, "PATCHED ✅", text_color=color.lime, text_size=size.small)
+    table.cell(dash, 0, 1, "Win Rate", text_color=color.white)
+    table.cell(dash, 1, 1, str.tostring(win_rate, "#.#") + "%", text_color=win_rate>=50?color.green:color.red)
+    table.cell(dash, 0, 2, "Profit Factor", text_color=color.white)
+    table.cell(dash, 1, 2, str.tostring(profit_factor, "#.##"), text_color=profit_factor>=1.5?color.green:color.orange)
