@@ -108,6 +108,9 @@ cleanup_labels(arr, max_size) =>
         old_label = array.shift(arr)
         label.delete(old_label)
 
+safe_bool(val) =>
+    not na(val) and val
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // 📊 DATOS MULTI-TIMEFRAME
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -245,8 +248,8 @@ is_star = significant_candle and upper_wick >= (2 * body) and lower_wick < (body
 is_engulf_sell = close < open and close < open[1] and open > close[1] and body > body[1] * 1.2 and significant_candle
 
 // ✅ CORRECCIÓN: Asegurar booleanos (evitar 'na')
-patron_buy = (is_hammer or is_engulf_buy) ? true : false
-patron_sell = (is_star or is_engulf_sell) ? true : false
+patron_buy = safe_bool(is_hammer) or safe_bool(is_engulf_buy)
+patron_sell = safe_bool(is_star) or safe_bool(is_engulf_sell)
 
 var label[] labels_patron = array.new_label(0)
 if patron_buy
@@ -291,7 +294,7 @@ shortCond = mandatory_filters_short and (confluence_score_short >= confluence_mi
 // ═══════════════════════════════════════════════════════════════════════════════
 var float daily_loss = 0.0
 var int daily_trades_count = 0
-if ta.change(time("1D"))
+if ta.change(time("1D")) != 0
     daily_loss := 0.0
     daily_trades_count := 0
 
@@ -421,7 +424,7 @@ if show_dashboard and barstate.islast
     profit_factor = strategy.grossloss > 0 ? (strategy.grossprofit / strategy.grossloss) : 0.0
     
     // ✅ CORRECCIÓN DEFINITIVA: Validar bools en patrones
-    recent_pattern = (patron_buy or patron_sell) or (patron_buy[1] or patron_sell[1]) or (patron_buy[2] or patron_sell[2])
+    recent_pattern = (safe_bool(patron_buy) or safe_bool(patron_sell)) or (safe_bool(patron_buy[1]) or safe_bool(patron_sell[1])) or (safe_bool(patron_buy[2]) or safe_bool(patron_sell[2]))
 
     var table dash = table.new(position.bottom_right, 2, 8, bgcolor=color.new(color.black, 50), border_width=1, border_color=COL_GOLD)
     table.cell(dash, 0, 0, "AURUM V35.4", text_color=COL_GOLD, text_size=size.normal)
