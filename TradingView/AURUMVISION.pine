@@ -274,8 +274,8 @@ if use_zone_filter
     confluence_score_long += zona_soporte ? 1 : 0
     confluence_score_short += zona_resist ? 1 : 0
 if use_rsi_filter
-    confluence_score_long += (rsi < rsi_os) ? 1 : 0
-    confluence_score_short += (rsi > rsi_ob) ? 1 : 0
+    confluence_score_long += safe_bool(rsi < rsi_os) ? 1 : 0
+    confluence_score_short += safe_bool(rsi > rsi_ob) ? 1 : 0
 if use_pattern_filter
     confluence_score_long += patron_buy ? 1 : 0
     confluence_score_short += patron_sell ? 1 : 0
